@@ -159,9 +159,9 @@ const Engine = (function () {
       var leaveExcluded = /휴학생[^.\n]{0,8}제외|재학생\(휴학생/.test(studentLine) || /휴학생\s*제외/.test(t);
       var leaveOk = /휴학/.test(studentLine) && !leaveExcluded;
       if (profile.status === "student_leave") {
-        push("학생 신분", leaveExcluded ? "no" : "ok",
-          leaveExcluded ? "이 공고는 재학생만 받고 휴학생은 제외합니다." : "휴학생도 지원할 수 있다고 적혀 있습니다.",
-          studentLine);
+        if (leaveExcluded) push("학생 신분", "no", "이 공고는 재학생만 받고 휴학생은 제외합니다.", studentLine);
+        else if (leaveOk) push("학생 신분", "ok", "휴학생도 지원할 수 있다고 적혀 있습니다.", studentLine);
+        else push("학생 신분", "warn", "학생 대상 공고로 보입니다. 휴학생 포함 여부가 찍혀 있지 않아 확인이 필요합니다.", studentLine);
       } else if (profile.status === "student_active") {
         push("학생 신분", "ok", "재학생 요건을 충족합니다.", studentLine);
       } else {
@@ -172,7 +172,13 @@ const Engine = (function () {
     }
 
     // 2. region
-    var regionLine = findSentence(p.sentences, /(거주|소재지|권역|충청권|수도권|동남권)/);
+    var regionSentence = "";
+    p.sentences.forEach(function (s) {
+      var hit = /(권역|거주|소재지|소재|지역\s*제한|한정)/.test(s) &&
+        (/(충청권|수도권|동남권|호남권|대경권)/.test(s) || REGIONS.some(function (r) { return s.indexOf(r) !== -1; }));
+      if (hit) regionSentence += " " + s;
+    });
+    var regionLine = regionSentence.trim();
     if (regionLine) {
       var allowed = null, group = null;
       Object.keys(GROUPS).forEach(function (g) {
