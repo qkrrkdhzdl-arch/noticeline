@@ -76,9 +76,9 @@ const Engine = (function () {
   }
 
   function extractAmount(text) {
-    var re = /(\d{1,3}(?:,\d{3})+|\d+)\s*(억\s*\d*\s*만?\s*원|억\s*원|만\s*원|원)/g, m, out = [];
+    var re = /(\d+\s*억(?:\s*\d[\d,]*\s*만)?\s*원|\d[\d,]*\s*만\s*원|\d[\d,]*\s*원)/g, m, out = [];
     while ((m = re.exec(text)) !== null) {
-      var v = m[0].replace(/\s+/g, "");
+      var v = m[0].replace(/\s+/g, " ").replace(/\s*원$/, "원").trim();
       if (out.indexOf(v) === -1) out.push(v);
     }
     return out.slice(0, 4);
@@ -107,7 +107,7 @@ const Engine = (function () {
       raw: text,
       sentences: list,
       name: name.replace(/^(공고|안내)\s*[-–:]?\s*/, "").trim(),
-      org: orgLine.replace(/^(주최|주관|주최\s*[·\/]\s*주관)\s*[:：]?\s*/, "")
+      org: orgLine.replace(/^(주최\s*[·\/]\s*주관|주최|주관)\s*[:：]?\s*/, "")
         .replace(/\s*주관\s*[:：]\s*/, " · ").trim(),
       deadline: dl ? dl.iso : null,
       deadlineRaw: dl ? stripLabel(findSentence(list, /(접수\s*기간|신청\s*기간|접수\s*마감|마감일|까지)/) || dl.raw) : "",
@@ -212,8 +212,10 @@ const Engine = (function () {
     // 4. career
     var careerLine = findSentence(p.sentences, /업력/);
     if (careerLine) {
-      push("업력", profile.business === "open" ? "warn" : "ok",
-        profile.business === "open" ? "업력 기준을 확인해야 합니다." : "예비창업자여도 되는지 원문에서 한 번 더 확인하세요.",
+      var allowsPre = /예비\s*창업자|예비창업/.test(careerLine);
+      push("업력", profile.business === "open" ? "warn" : (allowsPre ? "ok" : "warn"),
+        profile.business === "open" ? "업력 기준을 확인해야 합니다."
+          : (allowsPre ? "예비창업자도 지원할 수 있다고 적혀 있습니다." : "예비창업자도 받는지 원문에서 확인해야 합니다."),
         careerLine);
     }
 
