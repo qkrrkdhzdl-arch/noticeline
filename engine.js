@@ -6,9 +6,10 @@ const Engine = (function () {
   const BARE_MONTH = /(?:^|[^\d])(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})\s*(?:일|\.)?/g;
 
   const DOC_WORDS = [
-    ["참가신청서", /참가\s*신청서|신청서/],
-    ["사업계획서", /사업\s*계획서|제안서/],
-    ["개인정보 동의서", /개인정보[^.\n]{0,12}동의서/],
+    ["참가신청서", /참가\s*신청서|(?<!참가\s)신청서/],
+    ["사업계획서", /사업\s*계획서/],
+    ["제안서", /아이디어\s*제안서|제안서|적용\s*계획서/],
+    ["개인정보 동의서", /개인정보[^.\n]{0,16}동의서/],
     ["참가서약서", /서약서/],
     ["청렴서약서", /청렴\s*서약서/],
     ["재학·휴학증명서", /재학\s*증명서|휴학\s*증명서/],
@@ -21,10 +22,20 @@ const Engine = (function () {
   ];
 
   function sentences(text) {
-    return String(text || "")
-      .split(/\n+|(?<=[.!?。])\s+/)
-      .map(function (s) { return s.trim(); })
-      .filter(function (s) { return s.length > 1; });
+    var out = [];
+    String(text || "").split(/\n+/).forEach(function (line) {
+      line.split(/(?<=[.!?。])\s+(?![0-9０-９])(?=[가-힣A-Z\u201c'"(])/).forEach(function (s) {
+        s = s.trim();
+        if (s.length > 1) out.push(s);
+      });
+    });
+    return out;
+  }
+
+  function stripLabel(s) {
+    return String(s || "")
+      .replace(/^(접수\s*기간|신청\s*기간|공모\s*기간|접수\s*마감|마감일?|마감)\s*[:：]?\s*/, "")
+      .trim();
   }
 
   function findSentence(list, re) {
@@ -70,7 +81,7 @@ const Engine = (function () {
       var v = m[0].replace(/\s+/g, "");
       if (out.indexOf(v) === -1) out.push(v);
     }
-    return out.slice(0, 6);
+    return out.slice(0, 4);
   }
 
   function parse(text) {
@@ -96,9 +107,10 @@ const Engine = (function () {
       raw: text,
       sentences: list,
       name: name.replace(/^(공고|안내)\s*[-–:]?\s*/, "").trim(),
-      org: orgLine.replace(/^(주최|주관|주최\s*[·\/]\s*주관)\s*:?\s*/, "").trim(),
+      org: orgLine.replace(/^(주최|주관|주최\s*[·\/]\s*주관)\s*[:：]?\s*/, "")
+        .replace(/\s*주관\s*[:：]\s*/, " · ").trim(),
       deadline: dl ? dl.iso : null,
-      deadlineRaw: dl ? (findSentence(list, /(접수\s*기간|신청\s*기간|마감|까지)/) || dl.raw) : "",
+      deadlineRaw: dl ? stripLabel(findSentence(list, /(접수\s*기간|신청\s*기간|접수\s*마감|마감일|까지)/) || dl.raw) : "",
       amounts: extractAmount(text),
       target: target,
       docs: docs,
@@ -257,7 +269,7 @@ const Engine = (function () {
       if (d.getTime() < Date.now() - 86400000) return;
       out.push({ d: "D-" + s[0], date: fmt(d), title: s[1], body: s[2] });
     });
-    out.push({ d: "D-DAY", date: fmt(end), title: "마감 " + fmt(end), body: "마감 시각은 원문 표기를 확인하세요." });
+    out.push({ d: "D-DAY", date: fmt(end), title: "마감", body: "마감 시각은 원문 표기를 확인하세요(예: 18:00)." });
     return out;
   }
 
