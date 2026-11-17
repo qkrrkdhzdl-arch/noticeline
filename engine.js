@@ -212,7 +212,7 @@ const Engine = (function () {
     // 4. career
     var careerLine = findSentence(p.sentences, /업력/);
     if (careerLine) {
-      var allowsPre = /예비\s*창업자|예비창업/.test(careerLine);
+      var allowsPre = /예비\s*창업자|예비창업/.test(careerLine) || /예비\s*창업자|예비창업/.test(p.target || "");
       push("업력", profile.business === "open" ? "warn" : (allowsPre ? "ok" : "warn"),
         profile.business === "open" ? "업력 기준을 확인해야 합니다."
           : (allowsPre ? "예비창업자도 지원할 수 있다고 적혀 있습니다." : "예비창업자도 받는지 원문에서 확인해야 합니다."),
