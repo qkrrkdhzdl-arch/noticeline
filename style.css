@@ -36,14 +36,20 @@ em{font-style:normal;color:var(--mint)}
   box-shadow:inner 0 0 0 1px rgba(255,255,255,.2)}
 .brand strong{font-size:18px;letter-spacing:-.01em}
 .brand .sub{display:block;font-size:12px;color:#9fb0c3;margin-top:1px}
-.topnav{display:flex;gap:20px;font-size:13.5px}
+.topnav{display:flex;gap:20px;font-size:13.5px;align-items:center}
 .topnav a{color:#c6d2df;text-decoration:none}
 .topnav a:hover{color:#fff}
+.langswitch{display:inline-flex;border:1px solid rgba(255,255,255,.25);border-radius:999px;overflow:hidden;margin-left:6px}
+.langswitch button{border:0;background:transparent;color:#c6d2df;font-size:12px;letter-spacing:.03em;padding:4px 10px}
+.langswitch button[aria-pressed="true"]{background:#fff;color:#0b2a3d;font-weight:700}
 
 .hero{padding:56px 0 28px}
 .eyebrow{margin:0 0 12px;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mint)}
 .hero h1{font-size:clamp(30px,4.4vw,48px);max-width:21ch}
 .hero h1 em{white-space:nowrap}
+html[lang="en"] .hero h1{max-width:24ch;font-size:clamp(28px,3.9vw,44px)}
+html[lang="ko"] h1,html[lang="ko"] h2,html[lang="ko"] .lede,html[lang="ko"] .cond{word-break:keep-all}
+html[lang="en"] .hero h1 em{white-space:normal}
 .lede{max-width:62ch;color:var(--muted);font-size:16.5px;margin:18px 0 0}
 .lede strong{color:var(--text)}
 .stats{display:flex;gap:36px;margin-top:28px;flex-wrap:wrap}

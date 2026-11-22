@@ -149,26 +149,151 @@ const Engine = (function () {
   };
 
   /* ---- verdict: compare the notice with the reader's own situation ---- */
-  function verdict(p, profile) {
-    var t = p.raw, rows = [];
+  // Everything the reader sees here exists in both languages. The Korean text is
+  // the original; the English is written for the same reading, not translated
+  // word for word, because the labels are Korean institutions and notices.
+  var M = {
+    ko: {
+      labelStudent: "학생 신분", labelRegion: "지역", labelBusiness: "사업자",
+      labelCareer: "업력", labelTeam: "인원", labelDeadline: "마감",
+      leaveExcluded: "이 공고는 재학생만 받고 휴학생은 제외합니다.",
+      leaveOk: "휴학생도 지원할 수 있다고 적혀 있습니다.",
+      leaveUnclear: "학생 대상 공고로 보입니다. 휴학생 포함 여부가 적혀 있지 않아 확인이 필요합니다.",
+      activeOk: "재학생 요건을 충족합니다.",
+      studentsOnly: "학생만 참가할 수 있는 공고입니다.",
+      noStudentRule: "학생 신분 요건이 없습니다.",
+      regionInGroup: function (g) { return g + "에 해당합니다."; },
+      regionOutGroup: function (g, members, mine) {
+        return "이 공고는 " + g + "(" + members + ") 소재만 받습니다. " + mine + "은 해당하지 않습니다.";
+      },
+      regionInList: function (mine) { return mine + " 소재 요건을 충족합니다."; },
+      regionOutList: function (list) { return "이 공고는 " + list + " 소재만 받습니다."; },
+      regionUnclear: "지역 문구가 있으나 범위를 확정하지 못했습니다. 원문을 확인하세요.",
+      regionFree: "지역 제한이 없습니다.",
+      businessOk: "사업자등록증을 낼 수 있습니다.",
+      businessNeeded: "사업자등록증이 필요한 부문입니다. 예비창업자로 낼 수 있는 부문이 따로 있는지 확인하세요.",
+      businessNotNeeded: "사업자등록 없이 낼 수 있습니다(예비창업자 허용).",
+      careerCheck: "업력 기준을 확인해야 합니다.",
+      careerPreOk: "예비창업자도 지원할 수 있다고 적혀 있습니다.",
+      careerPreCheck: "예비창업자도 받는지 원문에서 확인해야 합니다.",
+      teamOnly: "2인 이상 팀만 받습니다. 함께 낼 팀원이 필요합니다.",
+      teamSolo: "개인으로 낼 수 있습니다.",
+      deadlinePassed: function (d) { return "마감일이 지났습니다(" + d + ")."; },
+      deadlineSoon: function (n) { return "마감까지 " + n + "일 남았습니다. 오늘 서류를 확정해야 합니다."; },
+      deadlineLeft: function (n) { return "마감까지 " + n + "일 남았습니다."; },
+      deadlineMissing: "원문에서 마감일을 찾지 못했습니다. 접수 페이지에서 직접 확인하세요.",
+      summaryHard: "신청 불가에 가까움", summaryWarn: "확인 필요", summaryOk: "조건 충족 가능",
+      planSteps: [
+        ["자격 문장 확인", "참가대상 문단을 읽고 내 신분·지역·사업자 상태와 맞는지 표시합니다."],
+        ["서류 목록 확정", "제출서류를 모두 내려받아 파일명 규칙을 정합니다."],
+        ["기관에 문의", "애매한 자격 한 가지만 전화나 메일로 확인하고 답변을 보관합니다."],
+        ["초안 완성", "제안서·사업계획서 초안을 끝까지 씁니다. 분량 제한을 먼저 확인합니다."],
+        ["PDF 변환·검수", "한글 폰트 깨짐, 서명란, 파일 용량을 확인합니다."],
+        ["제출", "마감 전날 제출하고 접수 화면을 캡처합니다."]
+      ],
+      planDay: "마감", planDayBody: "마감 시각은 원문 표기를 확인하세요(예: 18:00).",
+      icsSummary: function (d, name) { return d + " " + name; }
+    },
+    en: {
+      labelStudent: "Student status", labelRegion: "Region", labelBusiness: "Business",
+      labelCareer: "Years in business", labelTeam: "Team size", labelDeadline: "Deadline",
+      leaveExcluded: "This notice takes enrolled students only; students on leave are excluded.",
+      leaveOk: "The notice says students on leave may also apply.",
+      leaveUnclear: "This looks like a notice for students. It does not say whether students on leave count, so it needs checking.",
+      activeOk: "You meet the enrolled-student requirement.",
+      studentsOnly: "Only students may enter this notice.",
+      noStudentRule: "There is no student requirement.",
+      regionInGroup: function (g) { return "Your region is in " + enGroup(g) + "."; },
+      regionOutGroup: function (g, members, mine) {
+        return "This notice takes applicants based in " + enGroup(g) + " (" + members + ") only. " + enRegion(mine) + " is not in it.";
+      },
+      regionInList: function (mine) { return "The " + enRegion(mine) + " requirement is met."; },
+      regionOutList: function (list) { return "This notice takes applicants based in " + list + " only."; },
+      regionUnclear: "There is a regional sentence, but its scope could not be pinned down. Read the original.",
+      regionFree: "There is no regional restriction.",
+      businessOk: "You can provide the business registration certificate.",
+      businessNeeded: "This track needs a business registration certificate. Check whether another track accepts pre-founders.",
+      businessNotNeeded: "No business registration needed (pre-founders are accepted).",
+      careerCheck: "The years-in-business threshold needs checking.",
+      careerPreOk: "The notice says pre-founders may also apply.",
+      careerPreCheck: "Check in the original whether pre-founders are accepted.",
+      teamOnly: "Teams of two or more only. You need a teammate to submit with.",
+      teamSolo: "You can enter alone.",
+      deadlinePassed: function (d) { return "The deadline has passed (" + d + ")."; },
+      deadlineSoon: function (n) { return n + " days left. The documents have to be final today."; },
+      deadlineLeft: function (n) { return n + " days left."; },
+      deadlineMissing: "No deadline was found in the notice. Check it on the application page.",
+      summaryHard: "likely not eligible", summaryWarn: "needs checking", summaryOk: "conditions can be met",
+      planSteps: [
+        ["Read the eligibility sentences", "Read who may apply and mark where your status, region and business registration fit."],
+        ["Fix the document list", "Download every required form and decide the file names."],
+        ["Ask the office", "Call or email about the one unclear requirement, and keep the answer."],
+        ["Finish the draft", "Write the proposal or business plan to the end. Check the page limit first."],
+        ["Convert to PDF and check", "Look at broken fonts, signature fields and file size."],
+        ["Submit", "Submit the day before the deadline and save a screenshot of the receipt."]
+      ],
+      planDay: "Deadline", planDayBody: "Check the closing time in the notice itself (for example 18:00).",
+      icsSummary: function (d, name) { return d + " " + name; }
+    }
+  };
+
+  var GROUPS_EN = { "충청권": "Chungcheong", "수도권": "the Seoul area", "동남권": "the southeast", "호남권": "Honam", "대경권": "Daegu-Gyeongbuk" };
+  var REGIONS_EN = {
+    "서울": "Seoul", "부산": "Busan", "대구": "Daegu", "인천": "Incheon", "광주": "Gwangju", "대전": "Daejeon",
+    "울산": "Ulsan", "세종": "Sejong", "경기": "Gyeonggi", "강원": "Gangwon", "충북": "Chungbuk", "충남": "Chungnam",
+    "전북": "Jeonbuk", "전남": "Jeonnam", "경북": "Gyeongbuk", "경남": "Gyeongnam", "제주": "Jeju", "기타": "other"
+  };
+  var GROUPS_MEMBERS_EN = {
+    "충청권": "Daejeon, Sejong, Chungbuk, Chungnam",
+    "수도권": "Seoul, Gyeonggi, Incheon",
+    "동남권": "Busan, Ulsan, Gyeongnam",
+    "호남권": "Gwangju, Jeonbuk, Jeonnam",
+    "대경권": "Daegu, Gyeongbuk"
+  };
+  function enGroup(g) { return GROUPS_EN[g] || g; }
+  function enRegion(r) { return REGIONS_EN[r] || r; }
+
+  var DOC_EN = {
+    "참가신청서": "Application form (참가신청서)",
+    "사업계획서": "Business plan (사업계획서)",
+    "제안서": "Proposal (제안서)",
+    "개인정보 동의서": "Personal-data consent (개인정보 동의서)",
+    "참가서약서": "Participation pledge (참가서약서)",
+    "청렴서약서": "Integrity pledge (청렴서약서)",
+    "재학·휴학증명서": "Enrolment / leave certificate (재학·휴학증명서)",
+    "사업자등록증": "Business registration (사업자등록증)",
+    "사실증명": "Certificate of facts (사실증명)",
+    "주민등록등본": "Resident registration copy (주민등록등본)",
+    "발표자료(PPT)": "Presentation (발표자료)",
+    "증빙서류": "Supporting documents (증빙서류)",
+    "아이디어 제안서": "Idea proposal (아이디어 제안서)"
+  };
+
+  function docLabel(name, lang) {
+    return lang === "en" ? (DOC_EN[name] || name) : name;
+  }
+
+  function verdict(p, profile, lang) {
+    var w = M[lang] || M.ko;
+    var rows = [];
     function push(label, state, why, src) { rows.push({ label: label, state: state, why: why, src: src || "" }); }
 
     // 1. student status
     var studentLine = findSentence(p.sentences, /(대학생|재학생|휴학생|대학원생|학부생)/);
     if (studentLine) {
-      var leaveExcluded = /휴학생[^.\n]{0,8}제외|재학생\(휴학생/.test(studentLine) || /휴학생\s*제외/.test(t);
+      var leaveExcluded = /휴학생[^.\n]{0,8}제외|재학생\(휴학생/.test(studentLine) || /휴학생\s*제외/.test(p.raw);
       var leaveOk = /휴학/.test(studentLine) && !leaveExcluded;
       if (profile.status === "student_leave") {
-        if (leaveExcluded) push("학생 신분", "no", "이 공고는 재학생만 받고 휴학생은 제외합니다.", studentLine);
-        else if (leaveOk) push("학생 신분", "ok", "휴학생도 지원할 수 있다고 적혀 있습니다.", studentLine);
-        else push("학생 신분", "warn", "학생 대상 공고로 보입니다. 휴학생 포함 여부가 적혀 있지 않아 확인이 필요합니다.", studentLine);
+        if (leaveExcluded) push(w.labelStudent, "no", w.leaveExcluded, studentLine);
+        else if (leaveOk) push(w.labelStudent, "ok", w.leaveOk, studentLine);
+        else push(w.labelStudent, "warn", w.leaveUnclear, studentLine);
       } else if (profile.status === "student_active") {
-        push("학생 신분", "ok", "재학생 요건을 충족합니다.", studentLine);
+        push(w.labelStudent, "ok", w.activeOk, studentLine);
       } else {
-        push("학생 신분", "no", "학생만 참가할 수 있는 공고입니다.", studentLine);
+        push(w.labelStudent, "no", w.studentsOnly, studentLine);
       }
     } else {
-      push("학생 신분", "ok", "학생 신분 요건이 없습니다.", "");
+      push(w.labelStudent, "ok", w.noStudentRule, "");
     }
 
     // 2. region
@@ -188,30 +313,34 @@ const Engine = (function () {
       var mine = profile.region || "부산";
       if (group) {
         var inGroup = GROUPS[group].indexOf(mine) !== -1;
-        push("지역", inGroup ? "ok" : "no",
-          inGroup ? group + "에 해당합니다." : "이 공고는 " + group + "(" + GROUPS[group].join("·") + ") 소재만 받습니다. " + mine + "은 해당하지 않습니다.",
+        push(w.labelRegion, inGroup ? "ok" : "no",
+          inGroup
+            ? w.regionInGroup(group)
+            : w.regionOutGroup(group, lang === "en" ? GROUPS_MEMBERS_EN[group] : GROUPS[group].join("·"), mine),
           regionLine);
       } else if (allowed) {
-        push("지역", allowed.indexOf(mine) !== -1 ? "ok" : "no",
-          allowed.indexOf(mine) !== -1 ? mine + " 소재 요건을 충족합니다." : "이 공고는 " + allowed.join("·") + " 소재만 받습니다.",
+        push(w.labelRegion, allowed.indexOf(mine) !== -1 ? "ok" : "no",
+          allowed.indexOf(mine) !== -1
+            ? w.regionInList(mine)
+            : w.regionOutList(lang === "en" ? allowed.map(enRegion).join("·") : allowed.join("·")),
           regionLine);
       } else {
-        push("지역", "warn", "지역 문구가 있으나 범위를 확정하지 못했습니다. 원문을 확인하세요.", regionLine);
+        push(w.labelRegion, "warn", w.regionUnclear, regionLine);
       }
-    } else if (/전\s*국\s*민|누구나|전국/.test(t)) {
-      push("지역", "ok", "지역 제한이 없습니다.", findSentence(p.sentences, /전\s*국\s*민|누구나|전국/));
+    } else if (/전\s*국\s*민|누구나|전국/.test(p.raw)) {
+      push(w.labelRegion, "ok", w.regionFree, findSentence(p.sentences, /전\s*국\s*민|누구나|전국/));
     }
 
     // 3. business registration
     var bizLine = findSentence(p.sentences, /(사업자\s*등록증|사업자등록|개인사업자|법인)/);
     if (bizLine) {
-      var needed = /사업자\s*등록증[^.\n]{0,10}(제출|필수|첨부)/.test(t) || /사업자등록증 또는 고유번호증/.test(t);
+      var needed = /사업자\s*등록증[^.\n]{0,10}(제출|필수|첨부)/.test(p.raw) || /사업자등록증 또는 고유번호증/.test(p.raw);
       if (needed) {
-        push("사업자", profile.business === "open" ? "ok" : "warn",
-          profile.business === "open" ? "사업자등록증을 낼 수 있습니다." : "사업자등록증이 필요한 부문입니다. 예비창업자로 낼 수 있는 부문이 따로 있는지 확인하세요.",
+        push(w.labelBusiness, profile.business === "open" ? "ok" : "warn",
+          profile.business === "open" ? w.businessOk : w.businessNeeded,
           bizLine);
       } else {
-        push("사업자", "ok", "사업자등록 없이 낼 수 있습니다(예비창업자 허용).", bizLine);
+        push(w.labelBusiness, "ok", w.businessNotNeeded, bizLine);
       }
     }
 
@@ -219,9 +348,9 @@ const Engine = (function () {
     var careerLine = findSentence(p.sentences, /업력/);
     if (careerLine) {
       var allowsPre = /예비\s*창업자|예비창업/.test(careerLine) || /예비\s*창업자|예비창업/.test(p.target || "");
-      push("업력", profile.business === "open" ? "warn" : (allowsPre ? "ok" : "warn"),
-        profile.business === "open" ? "업력 기준을 확인해야 합니다."
-          : (allowsPre ? "예비창업자도 지원할 수 있다고 적혀 있습니다." : "예비창업자도 받는지 원문에서 확인해야 합니다."),
+      push(w.labelCareer, profile.business === "open" ? "warn" : (allowsPre ? "ok" : "warn"),
+        profile.business === "open" ? w.careerCheck
+          : (allowsPre ? w.careerPreOk : w.careerPreCheck),
         careerLine);
     }
 
@@ -229,24 +358,24 @@ const Engine = (function () {
     var teamLine = findSentence(p.sentences, /(2인\s*이상|팀\s*단위|팀\s*참가|1인\s*1)/);
     if (teamLine) {
       var teamOnly = /2인\s*이상/.test(teamLine) && !/개인/.test(teamLine);
-      push("인원", teamOnly ? "warn" : "ok",
-        teamOnly ? "2인 이상 팀만 받습니다. 함께 낼 팀원이 필요합니다." : "개인으로 낼 수 있습니다.",
+      push(w.labelTeam, teamOnly ? "warn" : "ok",
+        teamOnly ? w.teamOnly : w.teamSolo,
         teamLine);
     }
 
     // 6. deadline pressure
     if (p.deadline) {
       var days = daysLeft(p.deadline);
-      if (days < 0) push("마감", "no", "마감일이 지났습니다(" + p.deadline + ").", p.deadlineRaw);
-      else if (days <= 3) push("마감", "warn", "마감까지 " + days + "일 남았습니다. 오늘 서류를 확정해야 합니다.", p.deadlineRaw);
-      else push("마감", "ok", "마감까지 " + days + "일 남았습니다.", p.deadlineRaw);
+      if (days < 0) push(w.labelDeadline, "no", w.deadlinePassed(p.deadline), p.deadlineRaw);
+      else if (days <= 3) push(w.labelDeadline, "warn", w.deadlineSoon(days), p.deadlineRaw);
+      else push(w.labelDeadline, "ok", w.deadlineLeft(days), p.deadlineRaw);
     } else {
-      push("마감", "warn", "원문에서 마감일을 찾지 못했습니다. 접수 페이지에서 직접 확인하세요.", "");
+      push(w.labelDeadline, "warn", w.deadlineMissing, "");
     }
 
     var hard = rows.filter(function (r) { return r.state === "no"; }).length;
     var warn = rows.filter(function (r) { return r.state === "warn"; }).length;
-    var summary = hard ? "신청 불가에 가까움" : (warn ? "확인 필요" : "조건 충족 가능");
+    var summary = hard ? w.summaryHard : (warn ? w.summaryWarn : w.summaryOk);
     return { rows: rows, summary: summary, hard: hard, warn: warn };
   }
 
@@ -259,25 +388,19 @@ const Engine = (function () {
   }
 
   /* ---- plan ---- */
-  function plan(iso) {
+  function plan(iso, lang) {
     if (!iso) return [];
+    var w = M[lang] || M.ko;
     var parts = iso.split("-");
     var end = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2]));
-    var steps = [
-      [14, "자격 문장 확인", "참가대상 문단을 읽고 내 신분·지역·사업자 상태와 맞는지 표시합니다."],
-      [10, "서류 목록 확정", "제출서류를 모두 내려받아 파일명 규칙을 정합니다."],
-      [7, "기관에 문의", "애매한 자격 한 가지만 전화나 메일로 확인하고 답변을 보관합니다."],
-      [4, "초안 완성", "제안서·사업계획서 초안을 끝까지 씁니다. 분량 제한을 먼저 확인합니다."],
-      [2, "PDF 변환·검수", "한글 폰트 깨짐, 서명란, 파일 용량을 확인합니다."],
-      [1, "제출", "마감 전날 제출하고 접수 화면을 캡처합니다."]
-    ];
+    var offsets = [14, 10, 7, 4, 2, 1];
     var out = [];
-    steps.forEach(function (s) {
-      var d = new Date(end.getTime() - s[0] * 86400000);
+    w.planSteps.forEach(function (s, i) {
+      var d = new Date(end.getTime() - offsets[i] * 86400000);
       if (d.getTime() < Date.now() - 86400000) return;
-      out.push({ d: "D-" + s[0], date: fmt(d), title: s[1], body: s[2] });
+      out.push({ d: "D-" + offsets[i], date: fmt(d), title: s[0], body: s[1] });
     });
-    out.push({ d: "D-DAY", date: fmt(end), title: "마감", body: "마감 시각은 원문 표기를 확인하세요(예: 18:00)." });
+    out.push({ d: "D-DAY", date: fmt(end), title: w.planDay, body: w.planDayBody });
     return out;
   }
 
@@ -352,6 +475,6 @@ const Engine = (function () {
 
   return {
     parse: parse, conditions: conditions, verdict: verdict,
-    plan: plan, ics: ics, similar: similar, daysLeft: daysLeft, fmt: fmt
+    plan: plan, ics: ics, similar: similar, daysLeft: daysLeft, fmt: fmt, docLabel: docLabel
   };
 })();

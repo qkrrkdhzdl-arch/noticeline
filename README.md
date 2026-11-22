@@ -1,4 +1,6 @@
-# NoticeLine — 공고문 한 장을 오늘의 할 일로
+# NoticeLine
+
+[한국어 설명 (README.ko.md)](./README.ko.md)
 
 NoticeLine turns a Korean grant or competition notice (`지원사업 공고문`) into four things on one screen:
 
@@ -7,7 +9,7 @@ NoticeLine turns a Korean grant or competition notice (`지원사업 공고문`)
 3. **제출서류** — a checklist with progress.
 4. **D-day 계획** — a backwards plan from the deadline, exportable as an `.ics` calendar file.
 
-It runs entirely in the browser: a static site, no server, no account, no tracking.
+It runs entirely in the browser: a static site, no server, no account, no tracking. The interface is in Korean and English, opening in the browser's language with a KR/EN switch in the header; the notices themselves stay in Korean, as published.
 
 ## Why
 
@@ -40,6 +42,7 @@ A **bring-your-own-key** field is provided for summarisation of the notice. It i
 | file | role |
 |---|---|
 | `index.html` | page shell |
+| `i18n.js` | Korean and English interface copy, language detection, KR/EN switch |
 | `style.css` | design system (no framework) |
 | `engine.js` | extraction, rules, plan, ICS, similarity |
 | `app.js` | rendering and interaction |
