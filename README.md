@@ -25,7 +25,7 @@ notice text ──▶ sentence split ──▶ label extraction ──▶ rule e
                                           └── source sentence kept for every field
 ```
 
-* **Extraction** (`engine.js` → `parse`): dates near `마감`/`접수`, amounts with units, organizer lines, target paragraph, document paragraph, judging paragraph.
+* **Extraction** (`engine.js` → `parse`): dates near `마감`/`접수`, amounts with units, organizer lines, target paragraph, document paragraph, judging paragraph. A range keeps both ends, and a closing date written without a year takes the year of the date before it: `2026. 11. 13. ~ 12. 10.` closes on 12. 10., and `2026.12.20~01.05` closes on 2027-01-05.
 * **Rule engine** (`verdict`): six checks — student status, region (with 권역 mapping such as 충청권 = 대전·세종·충북·충남), business registration, business age, team size, deadline pressure. Each check returns `ok` / `확인 필요` / `불가` **with the sentence it used**.
 * **Backwards plan** (`plan`): D-14 → D-DAY, skipping steps already in the past.
 * **Similarity** (`similar`): TF-IDF cosine over a cached notice corpus, computed in the browser.
@@ -47,6 +47,7 @@ A **bring-your-own-key** field is provided for summarisation of the notice. It i
 | `engine.js` | extraction, rules, plan, ICS, similarity |
 | `app.js` | rendering and interaction |
 | `data/notices.js` | 9 real 2026 notices used as samples and as the similarity corpus |
+| `test/engine.test.js` | parser and rule tests (no dependencies) |
 
 ## Run
 
@@ -58,6 +59,14 @@ python3 -m http.server 8000
 ```
 
 No build step, no dependencies.
+
+## Test
+
+```bash
+node test/engine.test.js
+```
+
+The script runs the nine sample notices against the deadline each of them actually has, then the date cases the parser has to get right: a range whose closing date is written without a year, a range that crosses into the next year, a body date or schedule date that is not the deadline, and the same parse arriving in the verdict and the plan in both languages.
 
 ## Data
 

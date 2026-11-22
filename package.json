@@ -1,0 +1,9 @@
+{
+  "name": "noticeline",
+  "private": true,
+  "description": "Korean grant and competition notices, read in the browser.",
+  "scripts": {
+    "test": "node test/engine.test.js"
+  },
+  "license": "MIT"
+}

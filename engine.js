@@ -2,8 +2,21 @@
    A small, auditable rule engine. It does not guess: every field keeps the
    sentence it came from, and anything it cannot find stays empty. */
 const Engine = (function () {
+  // A date that carries its own year: 2026. 11. 13. / 2026-11-13 / 2026년 11월 13일.
   const KO_MONTH = /(20\d{2})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})/g;
-  const BARE_MONTH = /(?:^|[^\d])(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})\s*(?:일|\.)?/g;
+  // A month and day with the year left out. That is how the far half of a range is
+  // written ("2026. 11. 13. ~ 12. 10.") and how some notices give a closing date
+  // at all ("접수 마감 11. 16."). The trailing lookahead keeps it off decimals and
+  // measurements such as 1.5배 or 25.5%.
+  const BARE_MONTH = /(?<![\d.\/])(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})(?:\s*일)?(?=[\s.\-\/()\[\],:;~∼〜–—]|$)/g;
+  // What joins the two ends of a range. "부터" is matched loosely: the pattern is
+  // only applied to the few characters between two dates.
+  const RANGE_MARK = /[~∼〜–—-]|부터/;
+  // The words a notice uses on the line where it says when to apply. The first
+  // group names the application period; 마감 and 까지 only say "close" and are a
+  // weaker hint, used when no application period is written as a date at all.
+  const APPLY_LABEL = /접수|신청|모집|공모|응모/;
+  const CLOSE_LABEL = /마감|까지/;
 
   const DOC_WORDS = [
     ["참가신청서", /참가\s*신청서|(?<!참가\s)신청서/],
@@ -34,8 +47,15 @@ const Engine = (function () {
 
   function stripLabel(s) {
     return String(s || "")
-      .replace(/^(접수\s*기간|신청\s*기간|공모\s*기간|접수\s*마감|마감일?|마감)\s*[:：]?\s*/, "")
+      .replace(/^(접수\s*기간|신청\s*기간|모집\s*기간|공모\s*기간|응모\s*기간|접수\s*마감|마감일?|마감)\s*[:：]?\s*/, "")
       .trim();
+  }
+
+  // The line a position sits on, without the line breaks around it.
+  function lineAt(text, at) {
+    var s = text.lastIndexOf("\n", at - 1) + 1;
+    var e = text.indexOf("\n", at);
+    return text.slice(s, e < 0 ? text.length : e).trim();
   }
 
   function findSentence(list, re) {
@@ -43,36 +63,128 @@ const Engine = (function () {
     return "";
   }
 
+  function pad(n) { n = String(n); return n.length === 1 ? "0" + n : n; }
+
+  function isoOf(y, m, d) { return y + "-" + pad(m) + "-" + pad(d); }
+
+  function realMonthDay(m, d) { return m >= 1 && m <= 12 && d >= 1 && d <= 31; }
+
+  /* Every date in the text, in reading order.
+
+     A date written without a year takes the year of the date before it, which is
+     how a range reads: "2026. 11. 13. ~ 12. 10." closes on 2026-12-10, not on
+     2026-11-13. When the range runs into the next year ("2026.12.20~01.05") the
+     closing date moves to 2027, because a range cannot end before it starts. A
+     notice that never states a year at all ("접수 마감 11. 16.") is read in the
+     current year, the only year the person reading it can mean. */
   function allDates(text) {
-    var out = [], m;
-    var re = new RegExp(KO_MONTH.source, "g");
-    while ((m = re.exec(text)) !== null) {
-      var iso = m[1] + "-" + pad(m[2]) + "-" + pad(m[3]);
-      out.push({ iso: iso, at: m.index, raw: m[0] });
+    var out = [], spans = [], m;
+    var full = new RegExp(KO_MONTH.source, "g");
+    while ((m = full.exec(text)) !== null) {
+      var y = +m[1], mo = +m[2], da = +m[3];
+      if (!realMonthDay(mo, da)) continue;
+      out.push({ iso: isoOf(y, mo, da), at: m.index, raw: m[0],
+        year: y, month: mo, day: da, yearStated: true });
+      spans.push([m.index, m.index + m[0].length]);
     }
+    var bare = new RegExp(BARE_MONTH.source, "g");
+    while ((m = bare.exec(text)) !== null) {
+      var s = m.index, e = s + m[0].length;
+      var inside = false;
+      spans.forEach(function (sp) { if (s < sp[1] && e > sp[0]) inside = true; });
+      if (inside) continue;                       // the "11. 13." of "2026. 11. 13."
+      var mo2 = +m[1], da2 = +m[2];
+      if (!realMonthDay(mo2, da2)) continue;
+      out.push({ iso: null, at: s, raw: m[0], year: null, month: mo2, day: da2, yearStated: false });
+    }
+    out.sort(function (a, b) { return a.at - b.at; });
+
+    var thisYear = new Date().getFullYear();
+    var known = null, prev = null;
+    out.forEach(function (d) {
+      if (d.yearStated) {
+        known = d.year;
+      } else {
+        var y2 = known === null ? thisYear : known;
+        var between = prev ? text.slice(prev.at + prev.raw.length, d.at) : "";
+        var rollsOver = prev && between.length <= 16 && RANGE_MARK.test(between) &&
+          (d.month < prev.month || (d.month === prev.month && d.day < prev.day));
+        if (rollsOver) y2 += 1;
+        d.year = y2;
+        d.iso = isoOf(y2, d.month, d.day);
+      }
+      prev = d;
+    });
     return out;
   }
 
-  function pad(n) { n = String(n); return n.length === 1 ? "0" + n : n; }
+  /* Which of the dates is the closing date.
 
-  function pickDeadline(text, dates, list) {
+     The two ends of one range belong together ("11. 13. ~ 12. 10."), and the
+     closing date is the end, so consecutive dates joined by a range mark are read
+     as one range and only its last date can be the deadline. The range that
+     counts is the one sitting closest to the word that says applications close,
+     measured inside its own line: a schedule date two paragraphs down is not the
+     deadline even when it is later in the year. */
+  function pickDeadline(text, dates) {
     if (!dates.length) return null;
-    var nearDeadline = dates.filter(function (d) {
-      var around = text.slice(Math.max(0, d.at - 26), d.at + 26);
-      return /마감|까지|마감일|마감일자/.test(around);
+    var ranges = [], cur = null;
+    dates.forEach(function (d) {
+      var between = cur ? text.slice(cur.end, d.at) : "";
+      if (cur && between.indexOf("\n") === -1 && between.length <= 16 && RANGE_MARK.test(between)) {
+        cur.members.push(d);
+        cur.end = d.at + d.raw.length;
+      } else {
+        cur = { members: [d], start: d.at, end: d.at + d.raw.length };
+        ranges.push(cur);
+      }
     });
-    var pool = nearDeadline.length ? nearDeadline : dates;
-    var sorted = pool.slice().sort(function (a, b) { return a.iso < b.iso ? -1 : 1; });
-    // the notice's own order is 2026..2027 sometimes; take the last date that
-    // sits inside a 접수 sentence when there is one, else the latest date.
-    var applied = pool.filter(function (d) {
-      var around = text.slice(Math.max(0, d.at - 40), d.at + 40);
-      return /접수|신청\s*기간|공모\s*기간/.test(around);
+
+    var picked = bestRange(text, ranges, APPLY_LABEL) || bestRange(text, ranges, CLOSE_LABEL);
+    if (picked) return picked.members[picked.members.length - 1];
+
+    // No line names a closing date. If the notice does talk about applying
+    // somewhere (접수, 신청) it still never dated it, and a schedule date from
+    // another paragraph is not a substitute: the field stays empty and is shown as
+    // 확인 필요. Only a text that never mentions applying at all (a pasted range
+    // with nothing around it) falls back to its latest date.
+    var mentionsApply = APPLY_LABEL.test(text) || CLOSE_LABEL.test(text);
+    if (mentionsApply) return null;
+    var sorted = dates.slice().sort(function (a, b) { return a.iso < b.iso ? -1 : 1; });
+    return sorted[sorted.length - 1];
+  }
+
+  // The range on the line that carries this label, nearest to the label word.
+  // Distance is measured inside the range's own line, so a schedule date two
+  // paragraphs below cannot win the deadline just by coming later.
+  function bestRange(text, ranges, label) {
+    var found = null, foundDist = Infinity;
+    ranges.forEach(function (r) {
+      var dist = labelDistance(text, r, label);
+      if (dist === Infinity) return;
+      if (dist < foundDist || (dist === foundDist && r.start > found.start)) {
+        found = r;
+        foundDist = dist;
+      }
     });
-    var chosen = (applied.length ? applied : sorted)[
-      applied.length ? applied.length - 1 : sorted.length - 1
-    ];
-    return chosen;
+    return found;
+  }
+
+  function labelDistance(text, range, label) {
+    var ls = text.lastIndexOf("\n", range.start - 1) + 1;
+    var le = text.indexOf("\n", range.end);
+    var line = text.slice(ls, le < 0 ? text.length : le);
+    var pos = range.start - ls, endPos = range.end - ls;
+    var before = -1, after = -1, mm;
+    var re = new RegExp(label.source, "g");
+    while ((mm = re.exec(line)) !== null) {
+      if (mm.index < pos) before = mm.index;
+      else if (after < 0 && mm.index >= endPos) after = mm.index;
+    }
+    var dist = Infinity;
+    if (before >= 0) dist = pos - before;                 // "접수기간: …"
+    if (after >= 0) dist = Math.min(dist, (after - endPos) + 20);  // "… 18:00까지"
+    return dist;
   }
 
   function extractAmount(text) {
@@ -87,7 +199,7 @@ const Engine = (function () {
   function parse(text) {
     var list = sentences(text);
     var dates = allDates(text);
-    var dl = pickDeadline(text, dates, list);
+    var dl = pickDeadline(text, dates);
     var nameLine = list[0] || "";
     var name = (findSentence(list, /(공모전|경진대회|해커톤|아이디어톤|모집\s*공고|공모\s*공고)/) || nameLine).slice(0, 90);
     var orgLine = findSentence(list, /^(주최|주관|주최\s*[·\/]\s*주관)/) ||
@@ -110,7 +222,8 @@ const Engine = (function () {
       org: orgLine.replace(/^(주최\s*[·\/]\s*주관|주최|주관)\s*[:：]?\s*/, "")
         .replace(/\s*주관\s*[:：]\s*/, " · ").trim(),
       deadline: dl ? dl.iso : null,
-      deadlineRaw: dl ? stripLabel(findSentence(list, /(접수\s*기간|신청\s*기간|접수\s*마감|마감일|까지)/) || dl.raw) : "",
+      deadlineRaw: dl ? stripLabel(lineAt(text, dl.at)).slice(0, 160) : "",
+      deadlineStated: dl ? !!dl.yearStated : false,
       amounts: extractAmount(text),
       target: target,
       docs: docs,
